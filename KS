@@ -36,8 +36,11 @@ local faIsAbove = false
 local faLastHealth = 100
 local faTargetLastHealth = 100
 local faSpinConnection = nil
+local faAutoClickConnection = nil
 local faIsFirstTeleport = true
 local faLoopActive = false
+local faLastAutoClickTime = 0
+local FA_CLICK_INTERVAL = 0.1
 
 local function saveConfig()
     local config = {
@@ -218,10 +221,22 @@ local function faStartSpinning()
     end)
 end
 
+local function faStartAutoClick()
+    if faAutoClickConnection then faAutoClickConnection:Disconnect() end
+    faAutoClickConnection = RunService.RenderStepped:Connect(function()
+        if not FULL_AUTO_ENABLED or MainFrame.Visible then return end
+        local cur = tick()
+        if cur - faLastAutoClickTime >= FA_CLICK_INTERVAL then
+            faLastAutoClickTime = cur
+            mouse1click()
+        end
+    end)
+end
+
 local function faMainLoop()
     faLoopActive = true
     while FULL_AUTO_ENABLED do
-        task.wait(0.1)
+        task.wait(0.05)
         if not faTargetPlayer or not faTargetPlayer.Character then
             faTargetPlayer = faFindClosestPlayer()
             if not faTargetPlayer then continue end
@@ -236,7 +251,11 @@ local function faMainLoop()
         local targetRoot = targetChar and targetChar:FindFirstChild("HumanoidRootPart")
         local targetHead = targetChar and targetChar:FindFirstChild("Head")
         local targetHumanoid = targetChar and targetChar:FindFirstChild("Humanoid")
-        if not targetRoot or not targetHead or not targetHumanoid then faTargetPlayer = nil continue end
+        if not targetRoot or not targetHead or not targetHumanoid then 
+            faTargetPlayer = nil 
+            faTargetLastHealth = 100
+            continue 
+        end
         
         -- 항상 타겟의 헤드를 바라보도록 카메라 설정
         Camera.CameraType = Enum.CameraType.Scriptable
@@ -246,7 +265,7 @@ local function faMainLoop()
         local targetCurrentHealth = targetHumanoid.Health
         local targetDamageTaken = faTargetLastHealth - targetCurrentHealth
         
-        -- 상대의 HP가 35 이상 줄어들었는지 확인
+        -- 상대에게 35 이상 데미지를 입혔는지 확인
         if targetDamageTaken >= 35 then
             faIsAbove = false
             -- 1000 스터드 이상 떨어진 랜덤 위치로 텔레포트
@@ -259,7 +278,8 @@ local function faMainLoop()
             task.wait(0.1)
             faPressR()
             task.wait(2)
-            faTargetLastHealth = targetCurrentHealth
+            -- 타겟 체력 업데이트 후 다시 추적 시작
+            faTargetLastHealth = targetHumanoid.Health
             faLastHealth = humanoid.Health
         elseif currentHealth < faLastHealth then
             -- 내가 피해를 받은 경우
@@ -271,22 +291,22 @@ local function faMainLoop()
             faLastHealth = humanoid.Health
             faTargetLastHealth = targetCurrentHealth
         elseif not faIsAbove then
+            -- 처음 타겟 위로 이동
             root.CFrame = CFrame.new(targetRoot.Position + Vector3.new(0, 10000, 0))
             task.wait(math.random(1, 20) / 10) 
             faIsAbove = true
         else
-            -- 조금 더 위에서 추적하도록 수정 (5 -> 15)
+            -- 35 데미지 입히기 전까지 계속 타겟 위치로 이동 (더 높은 위치에서)
             root.CFrame = CFrame.new(targetRoot.Position + Vector3.new(0, 15, 0))
             if faIsFirstTeleport then
                 task.wait(2)
                 faIsFirstTeleport = false
             end
-            -- HUB가 닫혀있을 때만 클릭
-            if not MainFrame.Visible then
-                mouse1click()
-            end
             faLastHealth = currentHealth
-            faTargetLastHealth = targetCurrentHealth
+            -- 타겟 체력 변화 지속 추적
+            if targetCurrentHealth < faTargetLastHealth then
+                faTargetLastHealth = targetCurrentHealth
+            end
         end
     end
     faLoopActive = false
@@ -303,6 +323,7 @@ LocalPlayer.CharacterAdded:Connect(function(character)
         faTargetPlayer = nil
         faTargetLastHealth = 100
         faStartSpinning()
+        faStartAutoClick()
         if not faLoopActive then task.spawn(faMainLoop) end
     end
 end)
@@ -745,10 +766,12 @@ UIHandlers.UpdateFullAuto = CreateToggle("full Auto", AimPage, function(v)
         faTargetPlayer = nil
         faTargetLastHealth = 100
         faStartSpinning()
+        faStartAutoClick()
         if not faLoopActive then task.spawn(faMainLoop) end
         createNotification("Full Auto Started")
     else
         if faSpinConnection then faSpinConnection:Disconnect() end
+        if faAutoClickConnection then faAutoClickConnection:Disconnect() end
         Camera.CameraType = Enum.CameraType.Custom
         createNotification("Full Auto Stopped")
     end
@@ -808,6 +831,7 @@ if FULL_AUTO_ENABLED then
     faTargetPlayer = nil
     faTargetLastHealth = 100
     faStartSpinning()
+    faStartAutoClick()
     if not faLoopActive then task.spawn(faMainLoop) end
 end
 if SKIN_CHANGER_ENABLED then
