@@ -21,7 +21,7 @@ local AUTO_AIM_ENABLED = false
 local NOTIFICATION_ENABLED = false
 local AUTO_MATCH_ENABLED = false
 local FULL_AUTO_ENABLED = false
-local SKIN_CHANGER_ENABLED = false -- [신규] Skin Changer 상태
+local SKIN_CHANGER_ENABLED = false
 local AUTO_AIM_MODE = "Silent"
 local AUTO_MATCH_MODE = "1v1"
 local AIM_LOCK_KEY = Enum.UserInputType.MouseButton2
@@ -37,6 +37,7 @@ local faLastHealth = 100
 local faTargetLastHealth = 100
 local faSpinConnection = nil
 local faAutoClickConnection = nil
+local faCameraConnection = nil
 local faIsFirstTeleport = true
 local faLoopActive = false
 local faLastAutoClickTime = 0
@@ -175,167 +176,7 @@ local function createNotification(text)
 end
 
 -- ============================================
--- FULL AUTO LOGIC (제공된 스크립트 통합)
--- ============================================
-
-local function faFindClosestPlayer()
-    local character = LocalPlayer.Character
-    if not character or not character:FindFirstChild("HumanoidRootPart") then return nil end
-    local myPos = character.HumanoidRootPart.Position
-    local closestPlayer = nil
-    local shortestDistance = math.huge
-    for _, player in pairs(Players:GetPlayers()) do
-        if player ~= LocalPlayer and player.Character then
-            local theirRoot = player.Character:FindFirstChild("HumanoidRootPart")
-            if theirRoot then
-                local distance = (myPos - theirRoot.Position).Magnitude
-                if distance < shortestDistance then
-                    shortestDistance = distance
-                    closestPlayer = player
-                end
-            end
-        end
-    end
-    return closestPlayer
-end
-
-local function faPressR()
-    VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.R, false, game)
-    task.wait(0.05)
-    VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.R, false, game)
-end
-
-local function faStartSpinning()
-    if faSpinConnection then faSpinConnection:Disconnect() end
-    faSpinConnection = RunService.RenderStepped:Connect(function()
-        if not FULL_AUTO_ENABLED then return end
-        local character = LocalPlayer.Character
-        if character and character:FindFirstChild("HumanoidRootPart") then
-            local root = character.HumanoidRootPart
-            root.CFrame = root.CFrame * CFrame.Angles(
-                math.rad(math.random(-30, 30)),
-                math.rad(math.random(0, 360)),
-                math.rad(math.random(-30, 30))
-            )
-        end
-    end)
-end
-
-local function faStartAutoClick()
-    if faAutoClickConnection then faAutoClickConnection:Disconnect() end
-    faAutoClickConnection = RunService.RenderStepped:Connect(function()
-        if not FULL_AUTO_ENABLED or MainFrame.Visible then return end
-        
-        -- 타겟 헤드를 향해 카메라 고정
-        if faTargetPlayer and faTargetPlayer.Character then
-            local targetHead = faTargetPlayer.Character:FindFirstChild("Head")
-            if targetHead then
-                Camera.CameraType = Enum.CameraType.Scriptable
-                Camera.CFrame = CFrame.new(Camera.CFrame.Position, targetHead.Position)
-            end
-        end
-        
-        -- 자동 클릭
-        local cur = tick()
-        if cur - faLastAutoClickTime >= FA_CLICK_INTERVAL then
-            faLastAutoClickTime = cur
-            mouse1click()
-        end
-    end)
-end
-
-local function faMainLoop()
-    faLoopActive = true
-    while FULL_AUTO_ENABLED do
-        task.wait(0.05)
-        if not faTargetPlayer or not faTargetPlayer.Character then
-            faTargetPlayer = faFindClosestPlayer()
-            if not faTargetPlayer then continue end
-            local targetHum = faTargetPlayer.Character:FindFirstChild("Humanoid")
-            if targetHum then faTargetLastHealth = targetHum.Health end
-        end
-        local character = LocalPlayer.Character
-        local humanoid = character and character:FindFirstChild("Humanoid")
-        local root = character and character:FindFirstChild("HumanoidRootPart")
-        if not character or not humanoid or not root then continue end
-        local targetChar = faTargetPlayer.Character
-        local targetRoot = targetChar and targetChar:FindFirstChild("HumanoidRootPart")
-        local targetHead = targetChar and targetChar:FindFirstChild("Head")
-        local targetHumanoid = targetChar and targetChar:FindFirstChild("Humanoid")
-        if not targetRoot or not targetHead or not targetHumanoid then 
-            faTargetPlayer = nil 
-            faTargetLastHealth = 100
-            continue 
-        end
-        
-        local currentHealth = humanoid.Health
-        local targetCurrentHealth = targetHumanoid.Health
-        local targetDamageTaken = faTargetLastHealth - targetCurrentHealth
-        
-        -- 상대에게 35 이상 데미지를 입혔는지 확인
-        if targetDamageTaken >= 35 then
-            faIsAbove = false
-            -- 1000 스터드 이상 떨어진 랜덤 위치로 텔레포트
-            local randomOffset = Vector3.new(
-                math.random(-1500, 1500),
-                math.random(1000, 2000),
-                math.random(-1500, 1500)
-            )
-            root.CFrame = CFrame.new(targetRoot.Position + randomOffset)
-            task.wait(0.1)
-            faPressR()
-            task.wait(2)
-            -- 타겟 체력 업데이트 후 다시 추적 시작
-            faTargetLastHealth = targetHumanoid.Health
-            faLastHealth = humanoid.Health
-        elseif currentHealth < faLastHealth then
-            -- 내가 피해를 받은 경우
-            faIsAbove = false
-            root.CFrame = CFrame.new(targetRoot.Position + Vector3.new(0, 10000, 0))
-            task.wait(0.1)
-            faPressR()
-            task.wait(2)
-            faLastHealth = humanoid.Health
-            faTargetLastHealth = targetCurrentHealth
-        elseif not faIsAbove then
-            -- 처음 타겟 위로 이동
-            root.CFrame = CFrame.new(targetRoot.Position + Vector3.new(0, 10000, 0))
-            task.wait(math.random(1, 20) / 10) 
-            faIsAbove = true
-        else
-            -- 35 데미지 입히기 전까지 계속 타겟 위치로 이동 (더 높은 위치에서)
-            root.CFrame = CFrame.new(targetRoot.Position + Vector3.new(0, 15, 0))
-            if faIsFirstTeleport then
-                task.wait(2)
-                faIsFirstTeleport = false
-            end
-            faLastHealth = currentHealth
-            -- 타겟 체력 변화 지속 추적
-            if targetCurrentHealth < faTargetLastHealth then
-                faTargetLastHealth = targetCurrentHealth
-            end
-        end
-    end
-    faLoopActive = false
-end
-
-LocalPlayer.CharacterAdded:Connect(function(character)
-    if FULL_AUTO_ENABLED then
-        task.wait(1)
-        local humanoid = character:WaitForChild("Humanoid")
-        faLastHealth = humanoid.Health
-        faIsAbove = false
-        faIsFirstTeleport = true
-        faTargetPlayer = nil
-        faTargetLastHealth = 100
-        faStartSpinning()
-        faStartAutoClick()
-        if not faLoopActive then task.spawn(faMainLoop) end
-    end
-end)
-
--- ============================================
--- UI SETUP
+-- UI SETUP (먼저 선언)
 -- ============================================
 
 for _, gui in ipairs(game:GetService("CoreGui"):GetChildren()) do
@@ -427,6 +268,176 @@ VisualPage.BackgroundTransparency = 1
 VisualPage.Visible = false
 VisualPage.Parent = Content
 
+-- ============================================
+-- FULL AUTO LOGIC (수정됨)
+-- ============================================
+
+local function faFindClosestPlayer()
+    local character = LocalPlayer.Character
+    if not character or not character:FindFirstChild("HumanoidRootPart") then return nil end
+    local myPos = character.HumanoidRootPart.Position
+    local closestPlayer = nil
+    local shortestDistance = math.huge
+    for _, player in pairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer and player.Character then
+            local theirRoot = player.Character:FindFirstChild("HumanoidRootPart")
+            if theirRoot then
+                local distance = (myPos - theirRoot.Position).Magnitude
+                if distance < shortestDistance then
+                    shortestDistance = distance
+                    closestPlayer = player
+                end
+            end
+        end
+    end
+    return closestPlayer
+end
+
+local function faPressR()
+    VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.R, false, game)
+    task.wait(0.05)
+    VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.R, false, game)
+end
+
+local function faStartSpinning()
+    if faSpinConnection then faSpinConnection:Disconnect() end
+    faSpinConnection = RunService.RenderStepped:Connect(function()
+        if not FULL_AUTO_ENABLED then return end
+        local character = LocalPlayer.Character
+        if character and character:FindFirstChild("HumanoidRootPart") then
+            local root = character.HumanoidRootPart
+            root.CFrame = root.CFrame * CFrame.Angles(
+                math.rad(math.random(-30, 30)),
+                math.rad(math.random(0, 360)),
+                math.rad(math.random(-30, 30))
+            )
+        end
+    end)
+end
+
+local function faStartCameraLock()
+    if faCameraConnection then faCameraConnection:Disconnect() end
+    faCameraConnection = RunService.RenderStepped:Connect(function()
+        if not FULL_AUTO_ENABLED then 
+            Camera.CameraType = Enum.CameraType.Custom
+            return 
+        end
+        
+        if faTargetPlayer and faTargetPlayer.Character then
+            local targetHead = faTargetPlayer.Character:FindFirstChild("Head")
+            if targetHead then
+                Camera.CameraType = Enum.CameraType.Scriptable
+                Camera.CFrame = CFrame.new(Camera.CFrame.Position, targetHead.Position)
+            end
+        end
+    end)
+end
+
+local function faStartAutoClick()
+    if faAutoClickConnection then faAutoClickConnection:Disconnect() end
+    faAutoClickConnection = RunService.RenderStepped:Connect(function()
+        if not FULL_AUTO_ENABLED then return end
+        
+        -- Hub가 열려있으면 자동 클릭 중지
+        if MainFrame.Visible then return end
+        
+        -- 자동 클릭 실행
+        local cur = tick()
+        if cur - faLastAutoClickTime >= FA_CLICK_INTERVAL then
+            faLastAutoClickTime = cur
+            mouse1click()
+        end
+    end)
+end
+
+local function faMainLoop()
+    faLoopActive = true
+    while FULL_AUTO_ENABLED do
+        task.wait(0.05)
+        if not faTargetPlayer or not faTargetPlayer.Character then
+            faTargetPlayer = faFindClosestPlayer()
+            if not faTargetPlayer then continue end
+            local targetHum = faTargetPlayer.Character:FindFirstChild("Humanoid")
+            if targetHum then faTargetLastHealth = targetHum.Health end
+        end
+        local character = LocalPlayer.Character
+        local humanoid = character and character:FindFirstChild("Humanoid")
+        local root = character and character:FindFirstChild("HumanoidRootPart")
+        if not character or not humanoid or not root then continue end
+        local targetChar = faTargetPlayer.Character
+        local targetRoot = targetChar and targetChar:FindFirstChild("HumanoidRootPart")
+        local targetHead = targetChar and targetChar:FindFirstChild("Head")
+        local targetHumanoid = targetChar and targetChar:FindFirstChild("Humanoid")
+        if not targetRoot or not targetHead or not targetHumanoid then 
+            faTargetPlayer = nil 
+            faTargetLastHealth = 100
+            continue 
+        end
+        
+        local currentHealth = humanoid.Health
+        local targetCurrentHealth = targetHumanoid.Health
+        local targetDamageTaken = faTargetLastHealth - targetCurrentHealth
+        
+        if targetDamageTaken >= 35 then
+            faIsAbove = false
+            local randomOffset = Vector3.new(
+                math.random(-1500, 1500),
+                math.random(1000, 2000),
+                math.random(-1500, 1500)
+            )
+            root.CFrame = CFrame.new(targetRoot.Position + randomOffset)
+            task.wait(0.1)
+            faPressR()
+            task.wait(2)
+            faTargetLastHealth = targetHumanoid.Health
+            faLastHealth = humanoid.Health
+        elseif currentHealth < faLastHealth then
+            faIsAbove = false
+            root.CFrame = CFrame.new(targetRoot.Position + Vector3.new(0, 10000, 0))
+            task.wait(0.1)
+            faPressR()
+            task.wait(2)
+            faLastHealth = humanoid.Health
+            faTargetLastHealth = targetCurrentHealth
+        elseif not faIsAbove then
+            root.CFrame = CFrame.new(targetRoot.Position + Vector3.new(0, 10000, 0))
+            task.wait(math.random(1, 20) / 10) 
+            faIsAbove = true
+        else
+            root.CFrame = CFrame.new(targetRoot.Position + Vector3.new(0, 15, 0))
+            if faIsFirstTeleport then
+                task.wait(2)
+                faIsFirstTeleport = false
+            end
+            faLastHealth = currentHealth
+            if targetCurrentHealth < faTargetLastHealth then
+                faTargetLastHealth = targetCurrentHealth
+            end
+        end
+    end
+    faLoopActive = false
+end
+
+LocalPlayer.CharacterAdded:Connect(function(character)
+    if FULL_AUTO_ENABLED then
+        task.wait(1)
+        local humanoid = character:WaitForChild("Humanoid")
+        faLastHealth = humanoid.Health
+        faIsAbove = false
+        faIsFirstTeleport = true
+        faTargetPlayer = nil
+        faTargetLastHealth = 100
+        faStartSpinning()
+        faStartCameraLock()
+        faStartAutoClick()
+        if not faLoopActive then task.spawn(faMainLoop) end
+    end
+end)
+
+-- ============================================
+-- UI COMPONENTS 및 나머지 코드
+-- ============================================
+
 local UIHandlers = {}
 
 local function ShowTab(tabName)
@@ -442,10 +453,6 @@ local function ShowTab(tabName)
 end
 AimTab.MouseButton1Click:Connect(function() ShowTab("Aim") end)
 VisualTab.MouseButton1Click:Connect(function() ShowTab("Visual") end)
-
--- ============================================
--- UI COMPONENTS (Toggle, Button)
--- ============================================
 
 local function formatKeyName(enumItem)
     local name = enumItem.Name
@@ -587,10 +594,6 @@ local VisualList = Instance.new("UIListLayout")
 VisualList.Padding = UDim.new(0, 4)
 VisualList.Parent = VisualPage
 
--- ============================================
--- GAME LOGIC
--- ============================================
-
 local function attemptJoinMatch()
     if not AUTO_MATCH_ENABLED then return end
     pcall(function()
@@ -619,10 +622,6 @@ local function setupPlayerTracking(p)
 end
 Players.PlayerAdded:Connect(setupPlayerTracking)
 for _, p in ipairs(Players:GetPlayers()) do setupPlayerTracking(p) end
-
--- ============================================
--- AIM LOGIC
--- ============================================
 
 local function isVisible(p)
     if not p.Character or not p.Character:FindFirstChild("Head") then return false end
@@ -701,10 +700,6 @@ RunService.RenderStepped:Connect(function()
     end
 end)
 
--- ============================================
--- INITIALIZATION
--- ============================================
-
 local function updateESPStates()
     for _,p in pairs(Players:GetPlayers()) do
         local r = p.Character and p.Character:FindFirstChild("HumanoidRootPart")
@@ -747,7 +742,6 @@ end
 for _, p in pairs(Players:GetPlayers()) do createESP(p) end
 Players.PlayerAdded:Connect(createESP)
 
--- UI Handlers
 UIHandlers.UpdateSilentAim = CreateToggle("enabled (silent aim)", AimPage, function(v) SILENT_AIM_ENABLED = v end, nil, SILENT_AIM_ENABLED)
 UIHandlers.UpdateAimLock = CreateToggle("Aim Lock", AimPage, function(v) AIM_LOCK_ENABLED = v end, "Keybind", AIM_LOCK_ENABLED)
 UIHandlers.UpdateAutoAim = CreateToggle("Auto Aim", AimPage, function(v) 
@@ -772,11 +766,13 @@ UIHandlers.UpdateFullAuto = CreateToggle("full Auto", AimPage, function(v)
         faTargetPlayer = nil
         faTargetLastHealth = 100
         faStartSpinning()
+        faStartCameraLock()
         faStartAutoClick()
         if not faLoopActive then task.spawn(faMainLoop) end
         createNotification("Full Auto Started")
     else
         if faSpinConnection then faSpinConnection:Disconnect() end
+        if faCameraConnection then faCameraConnection:Disconnect() end
         if faAutoClickConnection then faAutoClickConnection:Disconnect() end
         Camera.CameraType = Enum.CameraType.Custom
         faLoopActive = false
@@ -788,7 +784,6 @@ CreateToggle("enabled (esp)", VisualPage, function(v) ESP_ENABLED = v updateESPS
 CreateToggle("HP bar", VisualPage, function(v) HP_BAR_ENABLED = v updateESPStates() end, nil, HP_BAR_ENABLED)
 CreateToggle("Notification", VisualPage, function(v) NOTIFICATION_ENABLED = v end, nil, NOTIFICATION_ENABLED)
 
--- [신규] Skin Changer 토글 추가
 CreateToggle("Load skin changer", VisualPage, function(v)
     SKIN_CHANGER_ENABLED = v
     if v then
@@ -838,6 +833,7 @@ if FULL_AUTO_ENABLED then
     faTargetPlayer = nil
     faTargetLastHealth = 100
     faStartSpinning()
+    faStartCameraLock()
     faStartAutoClick()
     if not faLoopActive then task.spawn(faMainLoop) end
 end
