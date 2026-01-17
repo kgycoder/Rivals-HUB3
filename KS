@@ -246,7 +246,7 @@ local function faMainLoop()
         local targetCurrentHealth = targetHumanoid.Health
         local targetDamageTaken = faTargetLastHealth - targetCurrentHealth
         
-        -- 상대에게 35 이상 데미지를 입혔는지 확인
+        -- 상대의 HP가 35 이상 줄어들었는지 확인
         if targetDamageTaken >= 35 then
             faIsAbove = false
             -- 1000 스터드 이상 떨어진 랜덤 위치로 텔레포트
@@ -280,7 +280,10 @@ local function faMainLoop()
                 task.wait(2)
                 faIsFirstTeleport = false
             end
-            mouse1click()
+            -- HUB가 닫혀있을 때만 클릭
+            if not MainFrame.Visible then
+                mouse1click()
+            end
             faLastHealth = currentHealth
             faTargetLastHealth = targetCurrentHealth
         end
