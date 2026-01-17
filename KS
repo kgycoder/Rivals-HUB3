@@ -222,13 +222,6 @@ local function faMainLoop()
     faLoopActive = true
     while FULL_AUTO_ENABLED do
         task.wait(0.1)
-        
-        -- HUB가 열려있으면 자동클릭 중지
-        if MainFrame.Visible then
-            task.wait(0.1)
-            continue
-        end
-        
         if not faTargetPlayer or not faTargetPlayer.Character then
             faTargetPlayer = faFindClosestPlayer()
             if not faTargetPlayer then continue end
@@ -282,13 +275,16 @@ local function faMainLoop()
             task.wait(math.random(1, 20) / 10) 
             faIsAbove = true
         else
-            -- 조금 더 위에서 추적 (5 -> 15로 증가)
+            -- 조금 더 위에서 추적하도록 수정 (5 -> 15)
             root.CFrame = CFrame.new(targetRoot.Position + Vector3.new(0, 15, 0))
             if faIsFirstTeleport then
                 task.wait(2)
                 faIsFirstTeleport = false
             end
-            mouse1click()
+            -- HUB가 닫혀있을 때만 클릭
+            if not MainFrame.Visible then
+                mouse1click()
+            end
             faLastHealth = currentHealth
             faTargetLastHealth = targetCurrentHealth
         end
