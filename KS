@@ -225,6 +225,17 @@ local function faStartAutoClick()
     if faAutoClickConnection then faAutoClickConnection:Disconnect() end
     faAutoClickConnection = RunService.RenderStepped:Connect(function()
         if not FULL_AUTO_ENABLED or MainFrame.Visible then return end
+        
+        -- 타겟 헤드를 향해 카메라 고정
+        if faTargetPlayer and faTargetPlayer.Character then
+            local targetHead = faTargetPlayer.Character:FindFirstChild("Head")
+            if targetHead then
+                Camera.CameraType = Enum.CameraType.Scriptable
+                Camera.CFrame = CFrame.new(Camera.CFrame.Position, targetHead.Position)
+            end
+        end
+        
+        -- 자동 클릭
         local cur = tick()
         if cur - faLastAutoClickTime >= FA_CLICK_INTERVAL then
             faLastAutoClickTime = cur
@@ -256,10 +267,6 @@ local function faMainLoop()
             faTargetLastHealth = 100
             continue 
         end
-        
-        -- 항상 타겟의 헤드를 바라보도록 카메라 설정
-        Camera.CameraType = Enum.CameraType.Scriptable
-        Camera.CFrame = CFrame.new(Camera.CFrame.Position, targetHead.Position)
         
         local currentHealth = humanoid.Health
         local targetCurrentHealth = targetHumanoid.Health
@@ -310,7 +317,6 @@ local function faMainLoop()
         end
     end
     faLoopActive = false
-    Camera.CameraType = Enum.CameraType.Custom
 end
 
 LocalPlayer.CharacterAdded:Connect(function(character)
@@ -773,6 +779,7 @@ UIHandlers.UpdateFullAuto = CreateToggle("full Auto", AimPage, function(v)
         if faSpinConnection then faSpinConnection:Disconnect() end
         if faAutoClickConnection then faAutoClickConnection:Disconnect() end
         Camera.CameraType = Enum.CameraType.Custom
+        faLoopActive = false
         createNotification("Full Auto Stopped")
     end
 end, nil, FULL_AUTO_ENABLED)
