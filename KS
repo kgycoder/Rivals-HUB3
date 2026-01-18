@@ -48,6 +48,7 @@ local faGravityConnection = nil
 local faLastRetreatTime = 0
 local FA_RETREAT_INTERVAL = 2.5
 local faIsRetreating = false
+local faRetreatLock = false
 
 local function saveConfig()
     local config = {
@@ -275,7 +276,7 @@ VisualPage.Visible = false
 VisualPage.Parent = Content
 
 -- ============================================
--- FULL AUTO LOGIC (수정됨 - 충돌 해결)
+-- FULL AUTO LOGIC (수정됨 - 오토클릭 및 후퇴 로직 개선)
 -- ============================================
 
 local function faFindClosestPlayer()
@@ -381,12 +382,29 @@ local function faStartCameraLock()
     end)
 end
 
+local function faIsTargetInRange()
+    if not faTargetPlayer or not faTargetPlayer.Character then return false end
+    
+    local character = LocalPlayer.Character
+    local myRoot = character and character:FindFirstChild("HumanoidRootPart")
+    local targetRoot = faTargetPlayer.Character:FindFirstChild("HumanoidRootPart")
+    
+    if not myRoot or not targetRoot then return false end
+    
+    local distance = (myRoot.Position - targetRoot.Position).Magnitude
+    local verticalDistance = math.abs(myRoot.Position.Y - targetRoot.Position.Y)
+    
+    return distance <= 30 and verticalDistance <= 25
+end
+
 local function faStartAutoClick()
     if faAutoClickConnection then faAutoClickConnection:Disconnect() end
     faAutoClickConnection = RunService.RenderStepped:Connect(function()
         if not FULL_AUTO_ENABLED or faAutoClickPaused or faIsRetreating then return end
         
         if MainFrame.Visible then return end
+        
+        if not faIsTargetInRange() then return end
         
         local cur = tick()
         if cur - faLastAutoClickTime >= FA_CLICK_INTERVAL then
@@ -397,8 +415,9 @@ local function faStartAutoClick()
 end
 
 local function faPerformRetreat(targetRoot)
-    if faIsRetreating then return end
+    if faRetreatLock then return end
     
+    faRetreatLock = true
     faIsRetreating = true
     faAutoClickPaused = true
     
@@ -407,13 +426,14 @@ local function faPerformRetreat(targetRoot)
     if not root or not targetRoot then
         faIsRetreating = false
         faAutoClickPaused = false
+        faRetreatLock = false
         return
     end
     
     Camera.CameraType = Enum.CameraType.Custom
     
     root.CFrame = CFrame.new(targetRoot.Position + Vector3.new(0, 10000, 0))
-    task.wait(0.1)
+    task.wait(0.2)
     faPressR()
     task.wait(4)
     
@@ -421,6 +441,7 @@ local function faPerformRetreat(targetRoot)
     faIsRetreating = false
     faLastRetreatTime = tick()
     faIsAbove = false
+    faRetreatLock = false
     
     local newHumanoid = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid")
     if newHumanoid then
@@ -479,26 +500,28 @@ local function faMainLoop()
         local currentHealth = humanoid.Health
         local currentTime = tick()
         
-        if currentHealth < faLastHealth and faLastHealth > 0 then
-            faPerformRetreat(targetRoot)
-            
-        elseif not faIsRetreating and (currentTime - faLastRetreatTime >= FA_RETREAT_INTERVAL) then
-            faPerformRetreat(targetRoot)
-            
-        elseif not faIsAbove and not faIsRetreating then
-            root.CFrame = CFrame.new(targetRoot.Position + Vector3.new(0, 10000, 0))
-            task.wait(math.random(10, 20) / 10)
-            faIsAbove = true
-            
-        elseif not faIsRetreating then
-            root.CFrame = CFrame.new(targetRoot.Position + Vector3.new(0, 15, 0))
-            
-            if faIsFirstTeleport then
-                task.wait(2)
-                faIsFirstTeleport = false
+        if not faRetreatLock then
+            if currentHealth < faLastHealth and faLastHealth > 0 then
+                faPerformRetreat(targetRoot)
+                
+            elseif not faIsRetreating and (currentTime - faLastRetreatTime >= FA_RETREAT_INTERVAL) then
+                faPerformRetreat(targetRoot)
+                
+            elseif not faIsAbove and not faIsRetreating then
+                root.CFrame = CFrame.new(targetRoot.Position + Vector3.new(0, 10000, 0))
+                task.wait(math.random(10, 20) / 10)
+                faIsAbove = true
+                
+            elseif not faIsRetreating then
+                root.CFrame = CFrame.new(targetRoot.Position + Vector3.new(0, 15, 0))
+                
+                if faIsFirstTeleport then
+                    task.wait(2)
+                    faIsFirstTeleport = false
+                end
+                
+                faLastHealth = currentHealth
             end
-            
-            faLastHealth = currentHealth
         end
     end
     faLoopActive = false
@@ -516,6 +539,7 @@ LocalPlayer.CharacterAdded:Connect(function(character)
         faTargetMaxHealth = 100
         faAutoClickPaused = false
         faIsRetreating = false
+        faRetreatLock = false
         faLastRetreatTime = tick()
         faDisableGravity()
         faStartSpinning()
@@ -864,6 +888,7 @@ UIHandlers.UpdateFullAuto = CreateToggle("full Auto", AimPage, function(v)
         faTargetMaxHealth = 100
         faAutoClickPaused = false
         faIsRetreating = false
+        faRetreatLock = false
         faLastRetreatTime = tick()
         faDisableGravity()
         faStartSpinning()
@@ -880,6 +905,7 @@ UIHandlers.UpdateFullAuto = CreateToggle("full Auto", AimPage, function(v)
         faLoopActive = false
         faAutoClickPaused = false
         faIsRetreating = false
+        faRetreatLock = false
         createNotification("Full Auto Stopped")
     end
 end, nil, FULL_AUTO_ENABLED)
@@ -944,6 +970,7 @@ if FULL_AUTO_ENABLED then
     faTargetMaxHealth = 100
     faAutoClickPaused = false
     faIsRetreating = false
+    faRetreatLock = false
     faLastRetreatTime = tick()
     faDisableGravity()
     faStartSpinning()
