@@ -358,18 +358,24 @@ end
 local function faStartCameraLock()
     if faCameraConnection then faCameraConnection:Disconnect() end
     faCameraConnection = RunService.RenderStepped:Connect(function()
-        if not FULL_AUTO_ENABLED or faIsRetreating then 
-            if not FULL_AUTO_ENABLED then
-                Camera.CameraType = Enum.CameraType.Custom
-            end
+        if not FULL_AUTO_ENABLED then 
+            Camera.CameraType = Enum.CameraType.Custom
             return 
         end
         
-        if faTargetPlayer and faTargetPlayer.Character then
+        if faIsRetreating then 
+            return 
+        end
+        
+        local character = LocalPlayer.Character
+        local myRoot = character and character:FindFirstChild("HumanoidRootPart")
+        
+        if faTargetPlayer and faTargetPlayer.Character and myRoot then
             local targetHead = faTargetPlayer.Character:FindFirstChild("Head")
             if targetHead then
                 Camera.CameraType = Enum.CameraType.Scriptable
-                Camera.CFrame = CFrame.new(Camera.CFrame.Position, targetHead.Position)
+                local cameraPosition = myRoot.Position + Vector3.new(0, 5, 0)
+                Camera.CFrame = CFrame.new(cameraPosition, targetHead.Position)
             end
         end
     end)
@@ -404,6 +410,8 @@ local function faPerformRetreat(targetRoot)
         return
     end
     
+    Camera.CameraType = Enum.CameraType.Custom
+    
     root.CFrame = CFrame.new(targetRoot.Position + Vector3.new(0, 10000, 0))
     task.wait(0.1)
     faPressR()
@@ -412,6 +420,7 @@ local function faPerformRetreat(targetRoot)
     faAutoClickPaused = false
     faIsRetreating = false
     faLastRetreatTime = tick()
+    faIsAbove = false
     
     local newHumanoid = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid")
     if newHumanoid then
