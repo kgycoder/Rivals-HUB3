@@ -619,11 +619,14 @@ local function CreateToggle(name, parent, callback, configType, defaultValue)
     local function setEnabled(val)
         enabled = val
         checkInner.Visible = val
-        callback(val)
+        if callback then callback(val) end
         saveConfig()
     end
-    box.MouseButton1Click:Connect(function() setEnabled(not enabled) end)
-    label.MouseButton1Click:Connect(function() setEnabled(not enabled) end)
+    local function toggle()
+        setEnabled(not enabled)
+    end
+    box.MouseButton1Click:Connect(toggle)
+    label.MouseButton1Click:Connect(toggle)
 
     if configType then
         local configBtn = Instance.new("TextButton")
