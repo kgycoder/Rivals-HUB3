@@ -384,14 +384,27 @@ end
 local function faStartAutoClick()
     if faAutoClickConnection then faAutoClickConnection:Disconnect() end
     faAutoClickConnection = RunService.RenderStepped:Connect(function()
-        if not FULL_AUTO_ENABLED or faAutoClickPaused or faIsRetreating then return end
+        if not FULL_AUTO_ENABLED then return end
         
-        if MainFrame.Visible then return end
+        if faIsRetreating or faAutoClickPaused or MainFrame.Visible then return end
         
-        local cur = tick()
-        if cur - faLastAutoClickTime >= FA_CLICK_INTERVAL then
-            faLastAutoClickTime = cur
-            mouse1click()
+        local character = LocalPlayer.Character
+        local myRoot = character and character:FindFirstChild("HumanoidRootPart")
+        if not myRoot then return end
+        
+        if faTargetPlayer and faTargetPlayer.Character then
+            local targetRoot = faTargetPlayer.Character:FindFirstChild("HumanoidRootPart")
+            if targetRoot then
+                local distance = (myRoot.Position - targetRoot.Position).Magnitude
+                
+                if distance <= 30 and faIsAbove then
+                    local cur = tick()
+                    if cur - faLastAutoClickTime >= FA_CLICK_INTERVAL then
+                        faLastAutoClickTime = cur
+                        mouse1click()
+                    end
+                end
+            end
         end
     end)
 end
@@ -414,8 +427,13 @@ local function faPerformRetreat(targetRoot)
     
     root.CFrame = CFrame.new(targetRoot.Position + Vector3.new(0, 10000, 0))
     task.wait(0.1)
-    faPressR()
-    task.wait(4)
+    
+    for i = 1, 3 do
+        faPressR()
+        task.wait(0.5)
+    end
+    
+    task.wait(2.5)
     
     faAutoClickPaused = false
     faIsRetreating = false
@@ -479,26 +497,34 @@ local function faMainLoop()
         local currentHealth = humanoid.Health
         local currentTime = tick()
         
-        if currentHealth < faLastHealth and faLastHealth > 0 then
-            faPerformRetreat(targetRoot)
-            
-        elseif not faIsRetreating and (currentTime - faLastRetreatTime >= FA_RETREAT_INTERVAL) then
-            faPerformRetreat(targetRoot)
-            
-        elseif not faIsAbove and not faIsRetreating then
-            root.CFrame = CFrame.new(targetRoot.Position + Vector3.new(0, 10000, 0))
-            task.wait(math.random(10, 20) / 10)
-            faIsAbove = true
-            
-        elseif not faIsRetreating then
-            root.CFrame = CFrame.new(targetRoot.Position + Vector3.new(0, 15, 0))
-            
-            if faIsFirstTeleport then
-                task.wait(2)
-                faIsFirstTeleport = false
+        if not faIsRetreating then
+            if currentHealth < faLastHealth and faLastHealth > 0 then
+                task.spawn(function()
+                    faPerformRetreat(targetRoot)
+                end)
+                
+            elseif (currentTime - faLastRetreatTime >= FA_RETREAT_INTERVAL) then
+                task.spawn(function()
+                    faPerformRetreat(targetRoot)
+                end)
+                
+            elseif not faIsAbove then
+                root.CFrame = CFrame.new(targetRoot.Position + Vector3.new(0, 10000, 0))
+                task.wait(math.random(10, 20) / 10)
+                faIsAbove = true
+                
+            else
+                root.CFrame = CFrame.new(targetRoot.Position + Vector3.new(0, 15, 0))
+                
+                if faIsFirstTeleport then
+                    task.wait(2)
+                    faIsFirstTeleport = false
+                end
+                
+                faLastHealth = currentHealth
             end
-            
-            faLastHealth = currentHealth
+        else
+            task.wait(0.1)
         end
     end
     faLoopActive = false
