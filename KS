@@ -1,4 +1,4 @@
--- KS-Rivals Script Hub (Full Auto Integration & HUB2 Update - Fixed)
+-- KS-Rivals Script Hub (Full Auto Integration & HUB2 Update - Fixed + Fast Shot)
 local UserInputService = game:GetService("UserInputService")
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -22,6 +22,7 @@ local NOTIFICATION_ENABLED = false
 local AUTO_MATCH_ENABLED = false
 local FULL_AUTO_ENABLED = false
 local SKIN_CHANGER_ENABLED = false
+local FAST_SHOT_ENABLED = false
 local AUTO_AIM_MODE = "Silent"
 local AUTO_MATCH_MODE = "1v1"
 local AIM_LOCK_KEY = Enum.UserInputType.MouseButton2
@@ -50,6 +51,9 @@ local FA_RETREAT_INTERVAL = 2.5
 local faIsRetreating = false
 local faRetreatLock = false
 
+-- Fast Shot 전용 변수
+local fastShotConnection = nil
+
 local function saveConfig()
     local config = {
         ESP_ENABLED = ESP_ENABLED,
@@ -61,6 +65,7 @@ local function saveConfig()
         AUTO_MATCH_ENABLED = AUTO_MATCH_ENABLED,
         FULL_AUTO_ENABLED = FULL_AUTO_ENABLED,
         SKIN_CHANGER_ENABLED = SKIN_CHANGER_ENABLED,
+        FAST_SHOT_ENABLED = FAST_SHOT_ENABLED,
         AUTO_AIM_MODE = AUTO_AIM_MODE,
         AUTO_MATCH_MODE = AUTO_MATCH_MODE,
         AIM_LOCK_KEY = tostring(AIM_LOCK_KEY)
@@ -89,6 +94,7 @@ if savedConfig then
     AUTO_MATCH_ENABLED = savedConfig.AUTO_MATCH_ENABLED or false
     FULL_AUTO_ENABLED = savedConfig.FULL_AUTO_ENABLED or false
     SKIN_CHANGER_ENABLED = savedConfig.SKIN_CHANGER_ENABLED or false
+    FAST_SHOT_ENABLED = savedConfig.FAST_SHOT_ENABLED or false
     AUTO_AIM_MODE = savedConfig.AUTO_AIM_MODE or "Silent"
     AUTO_MATCH_MODE = savedConfig.AUTO_MATCH_MODE or "1v1"
     if savedConfig.AIM_LOCK_KEY then
@@ -274,6 +280,95 @@ VisualPage.Size = UDim2.new(1, 0, 1, 0)
 VisualPage.BackgroundTransparency = 1
 VisualPage.Visible = false
 VisualPage.Parent = Content
+
+-- ============================================
+-- FAST SHOT LOGIC
+-- ============================================
+
+local function removeCooldowns()
+    local success, result = pcall(function()
+        local modulesFolder = ReplicatedStorage:FindFirstChild("Modules")
+        if not modulesFolder then
+            return false
+        end
+        
+        local possibleNames = {
+            "ItemLibrary",
+            "WeaponStats", 
+            "Items",
+            "WeaponData",
+            "Weapons"
+        }
+        
+        local weaponModule = nil
+        for _, name in ipairs(possibleNames) do
+            local found = modulesFolder:FindFirstChild(name)
+            if found then
+                weaponModule = found
+                break
+            end
+        end
+        
+        if not weaponModule then
+            return false
+        end
+        
+        local WeaponData = require(weaponModule)
+        
+        if not WeaponData.Items then
+            return false
+        end
+        
+        for weaponName, stats in pairs(WeaponData.Items) do
+            if stats.ShootCooldown then
+                stats.ShootCooldown = 0
+            end
+            
+            if stats.ShootBurstCooldown then
+                stats.ShootBurstCooldown = 0
+            end
+            
+            if stats.AttackCooldown then
+                stats.AttackCooldown = 0
+            end
+            
+            if stats.HeavyAttackCooldown then
+                stats.HeavyAttackCooldown = 0
+            end
+            
+            if stats.Cooldown then
+                stats.Cooldown = 0
+            end
+            
+            if stats.DeflectCooldown then stats.DeflectCooldown = 0 end
+            if stats.DashCooldown then stats.DashCooldown = 0 end
+            if stats.BuildCooldown then stats.BuildCooldown = 0 end
+            if stats.SpinCooldown then stats.SpinCooldown = 0 end
+            if stats.AirblastCooldown then stats.AirblastCooldown = 0 end
+            if stats.QuickShotCooldown then stats.QuickShotCooldown = 0 end
+            if stats.TransitionCooldown then stats.TransitionCooldown = 0 end
+            
+            if stats.ReloadTime then
+                stats.ReloadTime = 0.01
+            end
+        end
+        
+        return true
+    end)
+    
+    return success and result
+end
+
+local function hookCharacterForFastShot()
+    local character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+    
+    character.ChildAdded:Connect(function(child)
+        if child:IsA("Tool") and FAST_SHOT_ENABLED then
+            task.wait(0.05)
+            removeCooldowns()
+        end
+    end)
+end
 
 -- ============================================
 -- FULL AUTO LOGIC (수정됨 - 오토클릭 및 후퇴 로직 개선)
@@ -913,6 +1008,35 @@ UIHandlers.UpdateFullAuto = CreateToggle("full Auto", AimPage, function(v)
     end
 end, nil, FULL_AUTO_ENABLED)
 
+UIHandlers.UpdateFastShot = CreateToggle("Fast shot", AimPage, function(v)
+    FAST_SHOT_ENABLED = v
+    if v then
+        removeCooldowns()
+        if fastShotConnection then fastShotConnection:Disconnect() end
+        fastShotConnection = task.spawn(function()
+            while FAST_SHOT_ENABLED do
+                task.wait(5)
+                pcall(removeCooldowns)
+            end
+        end)
+        LocalPlayer.CharacterAdded:Connect(function()
+            if FAST_SHOT_ENABLED then
+                task.wait(1)
+                removeCooldowns()
+                hookCharacterForFastShot()
+            end
+        end)
+        if LocalPlayer.Character then
+            hookCharacterForFastShot()
+        end
+    else
+        if fastShotConnection then
+            fastShotConnection:Disconnect()
+            fastShotConnection = nil
+        end
+    end
+end, nil, FAST_SHOT_ENABLED)
+
 CreateToggle("enabled (esp)", VisualPage, function(v) ESP_ENABLED = v updateESPStates() end, nil, ESP_ENABLED)
 CreateToggle("HP bar", VisualPage, function(v) HP_BAR_ENABLED = v updateESPStates() end, nil, HP_BAR_ENABLED)
 CreateToggle("Notification", VisualPage, function(v) NOTIFICATION_ENABLED = v end, nil, NOTIFICATION_ENABLED)
@@ -985,6 +1109,18 @@ if SKIN_CHANGER_ENABLED then
     pcall(function()
         loadstring(game:HttpGet("https://raw.githubusercontent.com/kgycoder/Rivals-Skin-changer/refs/heads/main/Rivals-Skin%20changer", true))()
     end)
+end
+if FAST_SHOT_ENABLED then
+    removeCooldowns()
+    fastShotConnection = task.spawn(function()
+        while FAST_SHOT_ENABLED do
+            task.wait(5)
+            pcall(removeCooldowns)
+        end
+    end)
+    if LocalPlayer.Character then
+        hookCharacterForFastShot()
+    end
 end
 ShowTab("Aim")
 print("[KS-Rivals HUB2] Initialized. Full Auto Status: " .. tostring(FULL_AUTO_ENABLED))
