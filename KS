@@ -435,7 +435,7 @@ local function faPerformRetreat(targetRoot)
     root.CFrame = CFrame.new(targetRoot.Position + Vector3.new(0, 10000, 0))
     task.wait(0.2)
     faPressR()
-    task.wait(4)
+    task.wait(2)
     
     faAutoClickPaused = false
     faIsRetreating = false
