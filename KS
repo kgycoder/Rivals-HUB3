@@ -45,8 +45,6 @@ local faLastAutoClickTime = 0
 local FA_CLICK_INTERVAL = 0.1
 local faAutoClickPaused = false
 local faGravityConnection = nil
-local faLastRetreatTime = 0
-local FA_RETREAT_INTERVAL = math.random(2, 3)
 
 local function saveConfig()
     local config = {
@@ -356,14 +354,11 @@ end
 
 local function faStartCameraLock()
     if faCameraConnection then faCameraConnection:Disconnect() end
-    faCameraConnection = RunService.Heartbeat:Connect(function()
+    faCameraConnection = RunService.RenderStepped:Connect(function()
         if not FULL_AUTO_ENABLED then 
             Camera.CameraType = Enum.CameraType.Custom
             return 
         end
-        
-        -- 자동 클릭이 일시중지되어 있으면 카메라도 고정하지 않음
-        if faAutoClickPaused then return end
         
         if faTargetPlayer and faTargetPlayer.Character then
             local targetHead = faTargetPlayer.Character:FindFirstChild("Head")
@@ -392,10 +387,8 @@ end
 
 local function faMainLoop()
     faLoopActive = true
-    faLastRetreatTime = tick()
-    
     while FULL_AUTO_ENABLED do
-        task.wait(0.1)
+        task.wait(0.05)
         
         -- 타겟이 없거나 캐릭터가 없으면 새로 찾기
         if not faTargetPlayer or not faTargetPlayer.Character then
@@ -440,26 +433,23 @@ local function faMainLoop()
         -- 체력 확인
         local currentHealth = humanoid.Health
         local targetCurrentHealth = targetHumanoid.Health
-        local currentTime = tick()
+        local targetDamageTaken = faTargetLastHealth - targetCurrentHealth
+        
+        -- 디버그 출력 (필요시)
+        -- print(string.format("Target HP: %.1f -> %.1f | Damage: %.1f", faTargetLastHealth, targetCurrentHealth, targetDamageTaken))
         
         -- 1순위: 내가 피해를 받았을 때
         if currentHealth < faLastHealth and faLastHealth > 0 then
             faIsAbove = false
             faAutoClickPaused = true
             
-            -- 카메라 일시 해제
-            Camera.CameraType = Enum.CameraType.Custom
-            
             -- 위로 도망
-            local escapePos = targetRoot.Position + Vector3.new(0, 10000, 0)
-            root.CFrame = CFrame.new(escapePos)
-            task.wait(0.2)
+            root.CFrame = CFrame.new(targetRoot.Position + Vector3.new(0, 10000, 0))
+            task.wait(0.1)
             faPressR()
             task.wait(4)
             
             faAutoClickPaused = false
-            faLastRetreatTime = currentTime
-            FA_RETREAT_INTERVAL = math.random(2, 3)
             
             -- 체력 업데이트
             local newHumanoid = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid")
@@ -473,13 +463,10 @@ local function faMainLoop()
                 faTargetLastHealth = newTargetHum.Health
             end
             
-        -- 2순위: 자동 후퇴 (2~3초마다)
-        elseif (currentTime - faLastRetreatTime) >= FA_RETREAT_INTERVAL then
+        -- 2순위: 타겟에게 50+ 데미지를 입혔을 때
+        elseif targetDamageTaken >= 50 then
             faIsAbove = false
             faAutoClickPaused = true
-            
-            -- 카메라 일시 해제
-            Camera.CameraType = Enum.CameraType.Custom
             
             -- 랜덤 위치로 후퇴
             local randomOffset = Vector3.new(
@@ -487,15 +474,12 @@ local function faMainLoop()
                 math.random(1000, 3000),
                 math.random(-2000, 2000)
             )
-            local retreatPos = targetRoot.Position + randomOffset
-            root.CFrame = CFrame.new(retreatPos)
-            task.wait(0.2)
+            root.CFrame = CFrame.new(targetRoot.Position + randomOffset)
+            task.wait(0.1)
             faPressR()
             task.wait(4)
             
             faAutoClickPaused = false
-            faLastRetreatTime = currentTime
-            FA_RETREAT_INTERVAL = math.random(2, 3)
             
             -- 체력 업데이트
             local newTargetChar = faTargetPlayer and faTargetPlayer.Character
@@ -511,15 +495,13 @@ local function faMainLoop()
             
         -- 3순위: 아직 위에 있지 않으면 위로 올라가기
         elseif not faIsAbove then
-            local upPos = targetRoot.Position + Vector3.new(0, 10000, 0)
-            root.CFrame = CFrame.new(upPos)
+            root.CFrame = CFrame.new(targetRoot.Position + Vector3.new(0, 10000, 0))
             task.wait(math.random(10, 20) / 10)
             faIsAbove = true
             
         -- 4순위: 타겟 추적 (15 스터드 위)
         else
-            local chasePos = targetRoot.Position + Vector3.new(0, 15, 0)
-            root.CFrame = CFrame.new(chasePos)
+            root.CFrame = CFrame.new(targetRoot.Position + Vector3.new(0, 15, 0))
             
             -- 첫 텔레포트는 2초 대기
             if faIsFirstTeleport then
