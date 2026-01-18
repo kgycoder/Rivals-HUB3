@@ -392,7 +392,11 @@ local function faMainLoop()
             faTargetPlayer = faFindClosestPlayer()
             if not faTargetPlayer then continue end
             local targetHum = faTargetPlayer.Character:FindFirstChild("Humanoid")
-            if targetHum then faTargetLastHealth = targetHum.Health end
+            if targetHum then 
+                faTargetLastHealth = targetHum.Health 
+            else
+                faTargetLastHealth = 100
+            end
         end
         local character = LocalPlayer.Character
         local humanoid = character and character:FindFirstChild("Humanoid")
@@ -425,8 +429,18 @@ local function faMainLoop()
             faPressR()
             task.wait(4)
             faAutoClickPaused = false
-            faTargetLastHealth = targetCurrentHealth
-            faLastHealth = humanoid.Health
+            local newTargetHum = targetChar and targetChar:FindFirstChild("Humanoid")
+            if newTargetHum then
+                faTargetLastHealth = newTargetHum.Health
+            else
+                faTargetLastHealth = 100
+            end
+            local newHumanoid = character and character:FindFirstChild("Humanoid")
+            if newHumanoid then
+                faLastHealth = newHumanoid.Health
+            else
+                faLastHealth = 100
+            end
         elseif currentHealth < faLastHealth then
             faIsAbove = false
             faAutoClickPaused = true
@@ -435,8 +449,18 @@ local function faMainLoop()
             faPressR()
             task.wait(4)
             faAutoClickPaused = false
-            faLastHealth = humanoid.Health
-            faTargetLastHealth = targetCurrentHealth
+            local newHumanoid = character and character:FindFirstChild("Humanoid")
+            if newHumanoid then
+                faLastHealth = newHumanoid.Health
+            else
+                faLastHealth = 100
+            end
+            local newTargetHum = targetChar and targetChar:FindFirstChild("Humanoid")
+            if newTargetHum then
+                faTargetLastHealth = newTargetHum.Health
+            else
+                faTargetLastHealth = targetCurrentHealth
+            end
         elseif not faIsAbove then
             root.CFrame = CFrame.new(targetRoot.Position + Vector3.new(0, 10000, 0))
             task.wait(math.random(1, 20) / 10) 
