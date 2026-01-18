@@ -29,7 +29,7 @@ local AIM_LOCK_KEY = Enum.UserInputType.MouseButton2
 local isAimLockHeld = false
 local aimLockConnection
 local lastClickTime = 0
-local CLICK_INTERVAL = 0.12
+local CLICK_INTERVAL = 0.01
 
 -- Full Auto 전용 변수
 local faTargetPlayer = nil
@@ -43,7 +43,7 @@ local faCameraConnection = nil
 local faIsFirstTeleport = true
 local faLoopActive = false
 local faLastAutoClickTime = 0
-local FA_CLICK_INTERVAL = 0.1
+local FA_CLICK_INTERVAL = 0.02
 local faAutoClickPaused = false
 local faGravityConnection = nil
 local faLastRetreatTime = 0
