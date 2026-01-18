@@ -1,4 +1,4 @@
--- KS-Rivals Script Hub (Full Auto Integration & HUB2 Update)
+-- KS-Rivals Script Hub (Fixed Full Auto Integration)
 local UserInputService = game:GetService("UserInputService")
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -30,21 +30,21 @@ local aimLockConnection
 local lastClickTime = 0
 local CLICK_INTERVAL = 0.12
 
--- Full Auto 전용 변수
+-- Full Auto 전용 변수 (수정됨)
 local faTargetPlayer = nil
 local faIsAbove = false
 local faLastHealth = 100
-local faTargetLastHealth = 100
-local faTargetMaxHealth = 100
 local faSpinConnection = nil
 local faAutoClickConnection = nil
 local faCameraConnection = nil
-local faIsFirstTeleport = true
 local faLoopActive = false
 local faLastAutoClickTime = 0
 local FA_CLICK_INTERVAL = 0.1
 local faAutoClickPaused = false
 local faGravityConnection = nil
+local faLastRetreatTime = 0
+local FA_RETREAT_INTERVAL = 2.5  -- 2~3초 평균 (2.5초)
+local faIsRetreating = false
 
 local function saveConfig()
     local config = {
@@ -97,7 +97,7 @@ if savedConfig then
 end
 
 -- ============================================
--- AUTO-RELOAD SYSTEM (HUB2 URL 적용)
+-- AUTO-RELOAD SYSTEM
 -- ============================================
 
 local SCRIPT_URL = "https://raw.githubusercontent.com/kgycoder/Rivals-HUB3/refs/heads/main/KS"
@@ -179,7 +179,7 @@ local function createNotification(text)
 end
 
 -- ============================================
--- UI SETUP (먼저 선언)
+-- UI SETUP
 -- ============================================
 
 for _, gui in ipairs(game:GetService("CoreGui"):GetChildren()) do
@@ -211,7 +211,7 @@ TopBar.BackgroundTransparency = 1
 TopBar.Parent = MainFrame
 
 local Title = Instance.new("TextLabel")
-Title.Text = "KS-Rivals HUB2 - Integrated"
+Title.Text = "KS-Rivals HUB2 - Fixed"
 Title.Font = Enum.Font.Code
 Title.TextColor3 = Color3.fromRGB(255, 255, 255)
 Title.TextSize = 13
@@ -272,7 +272,7 @@ VisualPage.Visible = false
 VisualPage.Parent = Content
 
 -- ============================================
--- FULL AUTO LOGIC (수정됨)
+-- FULL AUTO LOGIC (완전 수정됨)
 -- ============================================
 
 local function faFindClosestPlayer()
@@ -284,7 +284,8 @@ local function faFindClosestPlayer()
     for _, player in pairs(Players:GetPlayers()) do
         if player ~= LocalPlayer and player.Character then
             local theirRoot = player.Character:FindFirstChild("HumanoidRootPart")
-            if theirRoot then
+            local theirHum = player.Character:FindFirstChild("Humanoid")
+            if theirRoot and theirHum and theirHum.Health > 0 then
                 local distance = (myPos - theirRoot.Position).Magnitude
                 if distance < shortestDistance then
                     shortestDistance = distance
@@ -339,7 +340,7 @@ end
 local function faStartSpinning()
     if faSpinConnection then faSpinConnection:Disconnect() end
     faSpinConnection = RunService.RenderStepped:Connect(function()
-        if not FULL_AUTO_ENABLED then return end
+        if not FULL_AUTO_ENABLED or faIsRetreating then return end
         local character = LocalPlayer.Character
         if character and character:FindFirstChild("HumanoidRootPart") then
             local root = character.HumanoidRootPart
@@ -355,7 +356,7 @@ end
 local function faStartCameraLock()
     if faCameraConnection then faCameraConnection:Disconnect() end
     faCameraConnection = RunService.RenderStepped:Connect(function()
-        if not FULL_AUTO_ENABLED then 
+        if not FULL_AUTO_ENABLED or faIsRetreating then 
             Camera.CameraType = Enum.CameraType.Custom
             return 
         end
@@ -365,7 +366,11 @@ local function faStartCameraLock()
             if targetHead then
                 Camera.CameraType = Enum.CameraType.Scriptable
                 Camera.CFrame = CFrame.new(Camera.CFrame.Position, targetHead.Position)
+            else
+                Camera.CameraType = Enum.CameraType.Custom
             end
+        else
+            Camera.CameraType = Enum.CameraType.Custom
         end
     end)
 end
@@ -373,7 +378,7 @@ end
 local function faStartAutoClick()
     if faAutoClickConnection then faAutoClickConnection:Disconnect() end
     faAutoClickConnection = RunService.RenderStepped:Connect(function()
-        if not FULL_AUTO_ENABLED or faAutoClickPaused then return end
+        if not FULL_AUTO_ENABLED or faAutoClickPaused or faIsRetreating then return end
         
         if MainFrame.Visible then return end
         
@@ -385,25 +390,18 @@ local function faStartAutoClick()
     end)
 end
 
+-- 개선된 메인 루프
 local function faMainLoop()
     faLoopActive = true
     while FULL_AUTO_ENABLED do
         task.wait(0.05)
         
-        -- 타겟이 없거나 캐릭터가 없으면 새로 찾기
-        if not faTargetPlayer or not faTargetPlayer.Character then
+        -- 타겟 확인 및 갱신
+        if not faTargetPlayer or not faTargetPlayer.Character or not faTargetPlayer.Character:FindFirstChild("Humanoid") or faTargetPlayer.Character.Humanoid.Health <= 0 then
             faTargetPlayer = faFindClosestPlayer()
             if not faTargetPlayer then 
                 task.wait(0.5)
                 continue 
-            end
-            local targetHum = faTargetPlayer.Character:FindFirstChild("Humanoid")
-            if targetHum then 
-                faTargetLastHealth = targetHum.Health
-                faTargetMaxHealth = targetHum.MaxHealth
-            else
-                faTargetLastHealth = 100
-                faTargetMaxHealth = 100
             end
         end
         
@@ -411,7 +409,7 @@ local function faMainLoop()
         local character = LocalPlayer.Character
         local humanoid = character and character:FindFirstChild("Humanoid")
         local root = character and character:FindFirstChild("HumanoidRootPart")
-        if not character or not humanoid or not root then 
+        if not character or not humanoid or not root or humanoid.Health <= 0 then 
             task.wait(0.5)
             continue 
         end
@@ -419,53 +417,37 @@ local function faMainLoop()
         -- 타겟 캐릭터 체크
         local targetChar = faTargetPlayer.Character
         local targetRoot = targetChar and targetChar:FindFirstChild("HumanoidRootPart")
-        local targetHead = targetChar and targetChar:FindFirstChild("Head")
         local targetHumanoid = targetChar and targetChar:FindFirstChild("Humanoid")
         
-        if not targetRoot or not targetHead or not targetHumanoid then 
-            faTargetPlayer = nil 
-            faTargetLastHealth = 100
-            faTargetMaxHealth = 100
+        if not targetRoot or not targetHumanoid or targetHumanoid.Health <= 0 then 
+            faTargetPlayer = nil
             task.wait(0.5)
             continue 
         end
         
-        -- 체력 확인
         local currentHealth = humanoid.Health
-        local targetCurrentHealth = targetHumanoid.Health
-        local targetDamageTaken = faTargetLastHealth - targetCurrentHealth
+        local currentTime = tick()
         
-        -- 디버그 출력 (필요시)
-        -- print(string.format("Target HP: %.1f -> %.1f | Damage: %.1f", faTargetLastHealth, targetCurrentHealth, targetDamageTaken))
-        
-        -- 1순위: 내가 피해를 받았을 때
+        -- 1순위: 내가 피해를 받았을 때 (즉시 후퇴)
         if currentHealth < faLastHealth and faLastHealth > 0 then
-            faIsAbove = false
+            faIsRetreating = true
             faAutoClickPaused = true
             
-            -- 위로 도망
+            -- 위로 긴급 도망
             root.CFrame = CFrame.new(targetRoot.Position + Vector3.new(0, 10000, 0))
             task.wait(0.1)
             faPressR()
             task.wait(4)
             
+            faLastHealth = humanoid.Health
+            faLastRetreatTime = currentTime
+            faIsRetreating = false
             faAutoClickPaused = false
-            
-            -- 체력 업데이트
-            local newHumanoid = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid")
-            if newHumanoid then
-                faLastHealth = newHumanoid.Health
-            end
-            
-            local newTargetChar = faTargetPlayer and faTargetPlayer.Character
-            local newTargetHum = newTargetChar and newTargetChar:FindFirstChild("Humanoid")
-            if newTargetHum then
-                faTargetLastHealth = newTargetHum.Health
-            end
-            
-        -- 2순위: 타겟에게 50+ 데미지를 입혔을 때
-        elseif targetDamageTaken >= 50 then
             faIsAbove = false
+            
+        -- 2순위: 2~3초마다 자동 후퇴 (후퇴 중이 아닐 때만)
+        elseif not faIsRetreating and (currentTime - faLastRetreatTime) >= FA_RETREAT_INTERVAL then
+            faIsRetreating = true
             faAutoClickPaused = true
             
             -- 랜덤 위치로 후퇴
@@ -479,39 +461,25 @@ local function faMainLoop()
             faPressR()
             task.wait(4)
             
+            faLastRetreatTime = currentTime
+            faIsRetreating = false
             faAutoClickPaused = false
-            
-            -- 체력 업데이트
-            local newTargetChar = faTargetPlayer and faTargetPlayer.Character
-            local newTargetHum = newTargetChar and newTargetChar:FindFirstChild("Humanoid")
-            if newTargetHum then
-                faTargetLastHealth = newTargetHum.Health
-            end
-            
-            local newHumanoid = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid")
-            if newHumanoid then
-                faLastHealth = newHumanoid.Health
-            end
+            faIsAbove = false
             
         -- 3순위: 아직 위에 있지 않으면 위로 올라가기
-        elseif not faIsAbove then
+        elseif not faIsAbove and not faIsRetreating then
             root.CFrame = CFrame.new(targetRoot.Position + Vector3.new(0, 10000, 0))
             task.wait(math.random(10, 20) / 10)
             faIsAbove = true
             
         -- 4순위: 타겟 추적 (15 스터드 위)
-        else
+        elseif not faIsRetreating then
             root.CFrame = CFrame.new(targetRoot.Position + Vector3.new(0, 15, 0))
-            
-            -- 첫 텔레포트는 2초 대기
-            if faIsFirstTeleport then
-                task.wait(2)
-                faIsFirstTeleport = false
-            end
-            
-            -- 체력 업데이트 (매 프레임마다)
+        end
+        
+        -- 체력 업데이트 (후퇴 중이 아닐 때만)
+        if not faIsRetreating then
             faLastHealth = currentHealth
-            faTargetLastHealth = targetCurrentHealth
         end
     end
     faLoopActive = false
@@ -523,11 +491,10 @@ LocalPlayer.CharacterAdded:Connect(function(character)
         local humanoid = character:WaitForChild("Humanoid")
         faLastHealth = humanoid.Health
         faIsAbove = false
-        faIsFirstTeleport = true
         faTargetPlayer = nil
-        faTargetLastHealth = 100
-        faTargetMaxHealth = 100
         faAutoClickPaused = false
+        faIsRetreating = false
+        faLastRetreatTime = tick()
         faDisableGravity()
         faStartSpinning()
         faStartCameraLock()
@@ -537,7 +504,7 @@ LocalPlayer.CharacterAdded:Connect(function(character)
 end)
 
 -- ============================================
--- UI COMPONENTS 및 나머지 코드
+-- UI COMPONENTS
 -- ============================================
 
 local UIHandlers = {}
@@ -869,11 +836,11 @@ UIHandlers.UpdateFullAuto = CreateToggle("full Auto", AimPage, function(v)
         else
             faLastHealth = 100
         end
-        faIsFirstTeleport = true
         faTargetPlayer = nil
-        faTargetLastHealth = 100
-        faTargetMaxHealth = 100
         faAutoClickPaused = false
+        faIsAbove = false
+        faIsRetreating = false
+        faLastRetreatTime = tick()
         faDisableGravity()
         faStartSpinning()
         faStartCameraLock()
@@ -888,6 +855,7 @@ UIHandlers.UpdateFullAuto = CreateToggle("full Auto", AimPage, function(v)
         Camera.CameraType = Enum.CameraType.Custom
         faLoopActive = false
         faAutoClickPaused = false
+        faIsRetreating = false
         createNotification("Full Auto Stopped")
     end
 end, nil, FULL_AUTO_ENABLED)
@@ -946,11 +914,11 @@ if FULL_AUTO_ENABLED then
     else
         faLastHealth = 100
     end
-    faIsFirstTeleport = true
     faTargetPlayer = nil
-    faTargetLastHealth = 100
-    faTargetMaxHealth = 100
     faAutoClickPaused = false
+    faIsAbove = false
+    faIsRetreating = false
+    faLastRetreatTime = tick()
     faDisableGravity()
     faStartSpinning()
     faStartCameraLock()
@@ -963,4 +931,4 @@ if SKIN_CHANGER_ENABLED then
     end)
 end
 ShowTab("Aim")
-print("[KS-Rivals HUB2] Initialized. Full Auto Status: " .. tostring(FULL_AUTO_ENABLED))
+print("[KS-Rivals HUB2 Fixed] Initialized. Full Auto Status: " .. tostring(FULL_AUTO_ENABLED))
