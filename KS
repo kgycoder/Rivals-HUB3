@@ -42,6 +42,7 @@ local faIsFirstTeleport = true
 local faLoopActive = false
 local faLastAutoClickTime = 0
 local FA_CLICK_INTERVAL = 0.1
+local faAutoClickPaused = false -- 자동 클릭 일시정지 플래그
 
 local function saveConfig()
     local config = {
@@ -299,6 +300,28 @@ local function faPressR()
     VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.R, false, game)
 end
 
+local function faDisableGravity(character)
+    if character and character:FindFirstChild("HumanoidRootPart") then
+        local bodyVelocity = character.HumanoidRootPart:FindFirstChild("FABodyVelocity")
+        if not bodyVelocity then
+            bodyVelocity = Instance.new("BodyVelocity")
+            bodyVelocity.Name = "FABodyVelocity"
+            bodyVelocity.Velocity = Vector3.new(0, 0, 0)
+            bodyVelocity.MaxForce = Vector3.new(0, math.huge, 0)
+            bodyVelocity.Parent = character.HumanoidRootPart
+        end
+    end
+end
+
+local function faEnableGravity(character)
+    if character and character:FindFirstChild("HumanoidRootPart") then
+        local bodyVelocity = character.HumanoidRootPart:FindFirstChild("FABodyVelocity")
+        if bodyVelocity then
+            bodyVelocity:Destroy()
+        end
+    end
+end
+
 local function faStartSpinning()
     if faSpinConnection then faSpinConnection:Disconnect() end
     faSpinConnection = RunService.RenderStepped:Connect(function()
@@ -338,8 +361,8 @@ local function faStartAutoClick()
     faAutoClickConnection = RunService.RenderStepped:Connect(function()
         if not FULL_AUTO_ENABLED then return end
         
-        -- Hub가 열려있으면 자동 클릭 중지
-        if MainFrame.Visible then return end
+        -- Hub가 열려있거나 자동 클릭이 일시정지 상태면 중지
+        if MainFrame.Visible or faAutoClickPaused then return end
         
         -- 자동 클릭 실행
         local cur = tick()
@@ -378,8 +401,12 @@ local function faMainLoop()
         local targetCurrentHealth = targetHumanoid.Health
         local targetDamageTaken = faTargetLastHealth - targetCurrentHealth
         
+        -- 타겟에게 35 이상의 데미지를 입혔을 때
         if targetDamageTaken >= 35 then
             faIsAbove = false
+            faAutoClickPaused = true -- 자동 클릭 일시정지
+            faDisableGravity(character) -- 중력 비활성화
+            
             local randomOffset = Vector3.new(
                 math.random(-1500, 1500),
                 math.random(1000, 2000),
@@ -389,20 +416,32 @@ local function faMainLoop()
             task.wait(0.1)
             faPressR()
             task.wait(2)
+            
+            faAutoClickPaused = false -- 자동 클릭 재개
+            faEnableGravity(character) -- 중력 재활성화
             faTargetLastHealth = targetHumanoid.Health
             faLastHealth = humanoid.Health
+        -- 내가 피해를 받았을 때
         elseif currentHealth < faLastHealth then
             faIsAbove = false
+            faAutoClickPaused = true -- 자동 클릭 일시정지
+            faDisableGravity(character) -- 중력 비활성화
+            
             root.CFrame = CFrame.new(targetRoot.Position + Vector3.new(0, 10000, 0))
             task.wait(0.1)
             faPressR()
             task.wait(2)
+            
+            faAutoClickPaused = false -- 자동 클릭 재개
+            faEnableGravity(character) -- 중력 재활성화
             faLastHealth = humanoid.Health
             faTargetLastHealth = targetCurrentHealth
         elseif not faIsAbove then
+            faDisableGravity(character) -- 중력 비활성화
             root.CFrame = CFrame.new(targetRoot.Position + Vector3.new(0, 10000, 0))
             task.wait(math.random(1, 20) / 10) 
             faIsAbove = true
+            faEnableGravity(character) -- 중력 재활성화
         else
             root.CFrame = CFrame.new(targetRoot.Position + Vector3.new(0, 15, 0))
             if faIsFirstTeleport then
@@ -427,6 +466,7 @@ LocalPlayer.CharacterAdded:Connect(function(character)
         faIsFirstTeleport = true
         faTargetPlayer = nil
         faTargetLastHealth = 100
+        faAutoClickPaused = false
         faStartSpinning()
         faStartCameraLock()
         faStartAutoClick()
@@ -765,6 +805,7 @@ UIHandlers.UpdateFullAuto = CreateToggle("full Auto", AimPage, function(v)
         faIsFirstTeleport = true
         faTargetPlayer = nil
         faTargetLastHealth = 100
+        faAutoClickPaused = false
         faStartSpinning()
         faStartCameraLock()
         faStartAutoClick()
@@ -776,6 +817,8 @@ UIHandlers.UpdateFullAuto = CreateToggle("full Auto", AimPage, function(v)
         if faAutoClickConnection then faAutoClickConnection:Disconnect() end
         Camera.CameraType = Enum.CameraType.Custom
         faLoopActive = false
+        faAutoClickPaused = false
+        faEnableGravity(LocalPlayer.Character)
         createNotification("Full Auto Stopped")
     end
 end, nil, FULL_AUTO_ENABLED)
@@ -832,6 +875,7 @@ if FULL_AUTO_ENABLED then
     faIsFirstTeleport = true
     faTargetPlayer = nil
     faTargetLastHealth = 100
+    faAutoClickPaused = false
     faStartSpinning()
     faStartCameraLock()
     faStartAutoClick()
