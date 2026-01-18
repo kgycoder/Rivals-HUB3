@@ -412,7 +412,17 @@ local function faMainLoop()
         local targetCurrentHealth = targetHumanoid.Health
         local targetDamageTaken = faTargetLastHealth - targetCurrentHealth
         
-        if targetDamageTaken >= 35 then
+        if currentHealth < faLastHealth then
+            faIsAbove = false
+            faAutoClickPaused = true
+            root.CFrame = CFrame.new(targetRoot.Position + Vector3.new(0, 10000, 0))
+            task.wait(0.1)
+            faPressR()
+            task.wait(3)
+            faAutoClickPaused = false
+            faLastHealth = humanoid.Health
+            faTargetLastHealth = targetHumanoid.Health
+        elseif targetDamageTaken >= 35 then
             faIsAbove = false
             faAutoClickPaused = true
             local randomOffset = Vector3.new(
@@ -423,20 +433,10 @@ local function faMainLoop()
             root.CFrame = CFrame.new(targetRoot.Position + randomOffset)
             task.wait(0.1)
             faPressR()
-            task.wait(2)
+            task.wait(3)
             faAutoClickPaused = false
             faTargetLastHealth = targetHumanoid.Health
             faLastHealth = humanoid.Health
-        elseif currentHealth < faLastHealth then
-            faIsAbove = false
-            faAutoClickPaused = true
-            root.CFrame = CFrame.new(targetRoot.Position + Vector3.new(0, 10000, 0))
-            task.wait(0.1)
-            faPressR()
-            task.wait(2)
-            faAutoClickPaused = false
-            faLastHealth = humanoid.Health
-            faTargetLastHealth = targetCurrentHealth
         elseif not faIsAbove then
             root.CFrame = CFrame.new(targetRoot.Position + Vector3.new(0, 10000, 0))
             task.wait(math.random(1, 20) / 10) 
@@ -448,9 +448,7 @@ local function faMainLoop()
                 faIsFirstTeleport = false
             end
             faLastHealth = currentHealth
-            if targetCurrentHealth < faTargetLastHealth then
-                faTargetLastHealth = targetCurrentHealth
-            end
+            faTargetLastHealth = targetCurrentHealth
         end
     end
     faLoopActive = false
