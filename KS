@@ -1,4 +1,4 @@
--- KS-Rivals Script Hub (Full Auto Integration & HUB2 Update - Fixed + Fast Shot)
+-- KS-Rivals Script Hub (Full Auto Integration & HUB2 Update - Fixed + Optimized)
 local UserInputService = game:GetService("UserInputService")
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -22,7 +22,7 @@ local NOTIFICATION_ENABLED = false
 local AUTO_MATCH_ENABLED = false
 local FULL_AUTO_ENABLED = false
 local SKIN_CHANGER_ENABLED = false
-local FAST_SHOT_ENABLED = false
+local NO_COOL_TIME_ENABLED = false
 local AUTO_AIM_MODE = "Silent"
 local AUTO_MATCH_MODE = "1v1"
 local AIM_LOCK_KEY = Enum.UserInputType.MouseButton2
@@ -51,8 +51,9 @@ local FA_RETREAT_INTERVAL = 2.5
 local faIsRetreating = false
 local faRetreatLock = false
 
--- Fast Shot 전용 변수
-local fastShotConnection = nil
+-- No Cool Time 전용 변수
+local noCoolTimeConnection = nil
+local noCoolTimeApplied = false
 
 local function saveConfig()
     local config = {
@@ -65,7 +66,7 @@ local function saveConfig()
         AUTO_MATCH_ENABLED = AUTO_MATCH_ENABLED,
         FULL_AUTO_ENABLED = FULL_AUTO_ENABLED,
         SKIN_CHANGER_ENABLED = SKIN_CHANGER_ENABLED,
-        FAST_SHOT_ENABLED = FAST_SHOT_ENABLED,
+        NO_COOL_TIME_ENABLED = NO_COOL_TIME_ENABLED,
         AUTO_AIM_MODE = AUTO_AIM_MODE,
         AUTO_MATCH_MODE = AUTO_MATCH_MODE,
         AIM_LOCK_KEY = tostring(AIM_LOCK_KEY)
@@ -94,7 +95,7 @@ if savedConfig then
     AUTO_MATCH_ENABLED = savedConfig.AUTO_MATCH_ENABLED or false
     FULL_AUTO_ENABLED = savedConfig.FULL_AUTO_ENABLED or false
     SKIN_CHANGER_ENABLED = savedConfig.SKIN_CHANGER_ENABLED or false
-    FAST_SHOT_ENABLED = savedConfig.FAST_SHOT_ENABLED or false
+    NO_COOL_TIME_ENABLED = savedConfig.NO_COOL_TIME_ENABLED or savedConfig.FAST_SHOT_ENABLED or false
     AUTO_AIM_MODE = savedConfig.AUTO_AIM_MODE or "Silent"
     AUTO_MATCH_MODE = savedConfig.AUTO_MATCH_MODE or "1v1"
     if savedConfig.AIM_LOCK_KEY then
@@ -282,64 +283,53 @@ VisualPage.Visible = false
 VisualPage.Parent = Content
 
 -- ============================================
--- FAST SHOT LOGIC
+-- NO COOL TIME LOGIC (최적화됨)
 -- ============================================
 
+local weaponDataCache = nil
+local lastCooldownRemoval = 0
+local COOLDOWN_REMOVAL_INTERVAL = 10
+
 local function removeCooldowns()
+    local currentTime = tick()
+    if currentTime - lastCooldownRemoval < COOLDOWN_REMOVAL_INTERVAL then
+        return noCoolTimeApplied
+    end
+    
     local success, result = pcall(function()
-        local modulesFolder = ReplicatedStorage:FindFirstChild("Modules")
-        if not modulesFolder then
-            return false
+        if not weaponDataCache then
+            local modulesFolder = ReplicatedStorage:FindFirstChild("Modules")
+            if not modulesFolder then return false end
+            
+            local possibleNames = {
+                "ItemLibrary",
+                "WeaponStats", 
+                "Items",
+                "WeaponData",
+                "Weapons"
+            }
+            
+            local weaponModule = nil
+            for _, name in ipairs(possibleNames) do
+                local found = modulesFolder:FindFirstChild(name)
+                if found then
+                    weaponModule = found
+                    break
+                end
+            end
+            
+            if not weaponModule then return false end
+            weaponDataCache = require(weaponModule)
         end
         
-        local possibleNames = {
-            "ItemLibrary",
-            "WeaponStats", 
-            "Items",
-            "WeaponData",
-            "Weapons"
-        }
+        if not weaponDataCache.Items then return false end
         
-        local weaponModule = nil
-        for _, name in ipairs(possibleNames) do
-            local found = modulesFolder:FindFirstChild(name)
-            if found then
-                weaponModule = found
-                break
-            end
-        end
-        
-        if not weaponModule then
-            return false
-        end
-        
-        local WeaponData = require(weaponModule)
-        
-        if not WeaponData.Items then
-            return false
-        end
-        
-        for weaponName, stats in pairs(WeaponData.Items) do
-            if stats.ShootCooldown then
-                stats.ShootCooldown = 0
-            end
-            
-            if stats.ShootBurstCooldown then
-                stats.ShootBurstCooldown = 0
-            end
-            
-            if stats.AttackCooldown then
-                stats.AttackCooldown = 0
-            end
-            
-            if stats.HeavyAttackCooldown then
-                stats.HeavyAttackCooldown = 0
-            end
-            
-            if stats.Cooldown then
-                stats.Cooldown = 0
-            end
-            
+        for weaponName, stats in pairs(weaponDataCache.Items) do
+            if stats.ShootCooldown then stats.ShootCooldown = 0 end
+            if stats.ShootBurstCooldown then stats.ShootBurstCooldown = 0 end
+            if stats.AttackCooldown then stats.AttackCooldown = 0 end
+            if stats.HeavyAttackCooldown then stats.HeavyAttackCooldown = 0 end
+            if stats.Cooldown then stats.Cooldown = 0 end
             if stats.DeflectCooldown then stats.DeflectCooldown = 0 end
             if stats.DashCooldown then stats.DashCooldown = 0 end
             if stats.BuildCooldown then stats.BuildCooldown = 0 end
@@ -347,23 +337,22 @@ local function removeCooldowns()
             if stats.AirblastCooldown then stats.AirblastCooldown = 0 end
             if stats.QuickShotCooldown then stats.QuickShotCooldown = 0 end
             if stats.TransitionCooldown then stats.TransitionCooldown = 0 end
-            
-            if stats.ReloadTime then
-                stats.ReloadTime = 0.01
-            end
+            if stats.ReloadTime then stats.ReloadTime = 0.01 end
         end
         
+        lastCooldownRemoval = currentTime
         return true
     end)
     
-    return success and result
+    noCoolTimeApplied = success and result
+    return noCoolTimeApplied
 end
 
-local function hookCharacterForFastShot()
+local function hookCharacterForNoCoolTime()
     local character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
     
     character.ChildAdded:Connect(function(child)
-        if child:IsA("Tool") and FAST_SHOT_ENABLED then
+        if child:IsA("Tool") and NO_COOL_TIME_ENABLED then
             task.wait(0.05)
             removeCooldowns()
         end
@@ -371,10 +360,12 @@ local function hookCharacterForFastShot()
 end
 
 -- ============================================
--- FULL AUTO LOGIC (수정됨 - 오토클릭 및 후퇴 로직 개선)
+-- FULL AUTO LOGIC (토글 상태 확인 개선)
 -- ============================================
 
 local function faFindClosestPlayer()
+    if not FULL_AUTO_ENABLED then return nil end
+    
     local character = LocalPlayer.Character
     if not character or not character:FindFirstChild("HumanoidRootPart") then return nil end
     local myPos = character.HumanoidRootPart.Position
@@ -396,6 +387,7 @@ local function faFindClosestPlayer()
 end
 
 local function faPressR()
+    if not FULL_AUTO_ENABLED then return end
     VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.R, false, game)
     task.wait(0.05)
     VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.R, false, game)
@@ -404,7 +396,13 @@ end
 local function faDisableGravity()
     if faGravityConnection then faGravityConnection:Disconnect() end
     faGravityConnection = RunService.RenderStepped:Connect(function()
-        if not FULL_AUTO_ENABLED then return end
+        if not FULL_AUTO_ENABLED then 
+            if faGravityConnection then 
+                faGravityConnection:Disconnect() 
+                faGravityConnection = nil
+            end
+            return 
+        end
         local character = LocalPlayer.Character
         if character then
             local humanoid = character:FindFirstChild("Humanoid")
@@ -424,7 +422,10 @@ local function faDisableGravity()
 end
 
 local function faEnableGravity()
-    if faGravityConnection then faGravityConnection:Disconnect() end
+    if faGravityConnection then 
+        faGravityConnection:Disconnect() 
+        faGravityConnection = nil
+    end
     local character = LocalPlayer.Character
     if character then
         local root = character:FindFirstChild("HumanoidRootPart")
@@ -438,7 +439,14 @@ end
 local function faStartSpinning()
     if faSpinConnection then faSpinConnection:Disconnect() end
     faSpinConnection = RunService.RenderStepped:Connect(function()
-        if not FULL_AUTO_ENABLED or faIsRetreating then return end
+        if not FULL_AUTO_ENABLED then 
+            if faSpinConnection then 
+                faSpinConnection:Disconnect() 
+                faSpinConnection = nil
+            end
+            return 
+        end
+        if faIsRetreating then return end
         local character = LocalPlayer.Character
         if character and character:FindFirstChild("HumanoidRootPart") then
             local root = character.HumanoidRootPart
@@ -456,12 +464,14 @@ local function faStartCameraLock()
     faCameraConnection = RunService.RenderStepped:Connect(function()
         if not FULL_AUTO_ENABLED then 
             Camera.CameraType = Enum.CameraType.Custom
+            if faCameraConnection then 
+                faCameraConnection:Disconnect() 
+                faCameraConnection = nil
+            end
             return 
         end
         
-        if faIsRetreating then 
-            return 
-        end
+        if faIsRetreating then return end
         
         local character = LocalPlayer.Character
         local myRoot = character and character:FindFirstChild("HumanoidRootPart")
@@ -478,6 +488,7 @@ local function faStartCameraLock()
 end
 
 local function faIsTargetInRange()
+    if not FULL_AUTO_ENABLED then return false end
     if not faTargetPlayer or not faTargetPlayer.Character then return false end
     
     local character = LocalPlayer.Character
@@ -495,10 +506,15 @@ end
 local function faStartAutoClick()
     if faAutoClickConnection then faAutoClickConnection:Disconnect() end
     faAutoClickConnection = RunService.RenderStepped:Connect(function()
-        if not FULL_AUTO_ENABLED or faAutoClickPaused or faIsRetreating then return end
-        
+        if not FULL_AUTO_ENABLED then 
+            if faAutoClickConnection then 
+                faAutoClickConnection:Disconnect() 
+                faAutoClickConnection = nil
+            end
+            return 
+        end
+        if faAutoClickPaused or faIsRetreating then return end
         if MainFrame.Visible then return end
-        
         if not faIsTargetInRange() then return end
         
         local cur = tick()
@@ -510,6 +526,7 @@ local function faStartAutoClick()
 end
 
 local function faPerformRetreat(targetRoot)
+    if not FULL_AUTO_ENABLED then return end
     if faRetreatLock then return end
     
     faRetreatLock = true
@@ -553,7 +570,9 @@ end
 local function faMainLoop()
     faLoopActive = true
     while FULL_AUTO_ENABLED do
-        task.wait(0.05)
+        task.wait(0.1)
+        
+        if not FULL_AUTO_ENABLED then break end
         
         if not faTargetPlayer or not faTargetPlayer.Character then
             faTargetPlayer = faFindClosestPlayer()
@@ -823,14 +842,20 @@ local function setupPlayerTracking(p)
     if p == LocalPlayer then return end
     p.CharacterAdded:Connect(function(char)
         local hum = char:WaitForChild("Humanoid", 10)
+        if not hum then return end
         local lastH = hum.Health
         hum.HealthChanged:Connect(function(h)
+            if not NOTIFICATION_ENABLED then return end
             local diff = h - lastH
             if diff < 0 then createNotification(string.format("Hit %s -%d", p.Name, math.floor(-diff)))
             elseif diff > 0 then createNotification(string.format("Healing %s +%d", p.Name, math.floor(diff))) end
             lastH = h
         end)
-        hum.Died:Connect(function() createNotification("Killed " .. p.Name) end)
+        hum.Died:Connect(function() 
+            if NOTIFICATION_ENABLED then
+                createNotification("Killed " .. p.Name) 
+            end
+        end)
     end)
 end
 Players.PlayerAdded:Connect(setupPlayerTracking)
@@ -995,9 +1020,9 @@ UIHandlers.UpdateFullAuto = CreateToggle("full Auto", AimPage, function(v)
         if not faLoopActive then task.spawn(faMainLoop) end
         createNotification("Full Auto Started")
     else
-        if faSpinConnection then faSpinConnection:Disconnect() end
-        if faCameraConnection then faCameraConnection:Disconnect() end
-        if faAutoClickConnection then faAutoClickConnection:Disconnect() end
+        if faSpinConnection then faSpinConnection:Disconnect() faSpinConnection = nil end
+        if faCameraConnection then faCameraConnection:Disconnect() faCameraConnection = nil end
+        if faAutoClickConnection then faAutoClickConnection:Disconnect() faAutoClickConnection = nil end
         faEnableGravity()
         Camera.CameraType = Enum.CameraType.Custom
         faLoopActive = false
@@ -1008,34 +1033,40 @@ UIHandlers.UpdateFullAuto = CreateToggle("full Auto", AimPage, function(v)
     end
 end, nil, FULL_AUTO_ENABLED)
 
-UIHandlers.UpdateFastShot = CreateToggle("Fast shot", AimPage, function(v)
-    FAST_SHOT_ENABLED = v
+UIHandlers.UpdateNoCoolTime = CreateToggle("No Cool Time (All)", AimPage, function(v)
+    NO_COOL_TIME_ENABLED = v
     if v then
         removeCooldowns()
-        if fastShotConnection then fastShotConnection:Disconnect() end
-        fastShotConnection = task.spawn(function()
-            while FAST_SHOT_ENABLED do
-                task.wait(5)
-                pcall(removeCooldowns)
+        if noCoolTimeConnection then noCoolTimeConnection:Disconnect() end
+        noCoolTimeConnection = task.spawn(function()
+            while NO_COOL_TIME_ENABLED do
+                task.wait(10)
+                if NO_COOL_TIME_ENABLED then
+                    pcall(removeCooldowns)
+                end
             end
         end)
         LocalPlayer.CharacterAdded:Connect(function()
-            if FAST_SHOT_ENABLED then
+            if NO_COOL_TIME_ENABLED then
                 task.wait(1)
                 removeCooldowns()
-                hookCharacterForFastShot()
+                hookCharacterForNoCoolTime()
             end
         end)
         if LocalPlayer.Character then
-            hookCharacterForFastShot()
+            hookCharacterForNoCoolTime()
         end
+        createNotification("No Cool Time Enabled")
     else
-        if fastShotConnection then
-            fastShotConnection:Disconnect()
-            fastShotConnection = nil
+        if noCoolTimeConnection then
+            noCoolTimeConnection:Disconnect()
+            noCoolTimeConnection = nil
         end
+        weaponDataCache = nil
+        noCoolTimeApplied = false
+        createNotification("No Cool Time Disabled")
     end
-end, nil, FAST_SHOT_ENABLED)
+end, nil, NO_COOL_TIME_ENABLED)
 
 CreateToggle("enabled (esp)", VisualPage, function(v) ESP_ENABLED = v updateESPStates() end, nil, ESP_ENABLED)
 CreateToggle("HP bar", VisualPage, function(v) HP_BAR_ENABLED = v updateESPStates() end, nil, HP_BAR_ENABLED)
@@ -1110,16 +1141,18 @@ if SKIN_CHANGER_ENABLED then
         loadstring(game:HttpGet("https://raw.githubusercontent.com/kgycoder/Rivals-Skin-changer/refs/heads/main/Rivals-Skin%20changer", true))()
     end)
 end
-if FAST_SHOT_ENABLED then
+if NO_COOL_TIME_ENABLED then
     removeCooldowns()
-    fastShotConnection = task.spawn(function()
-        while FAST_SHOT_ENABLED do
-            task.wait(5)
-            pcall(removeCooldowns)
+    noCoolTimeConnection = task.spawn(function()
+        while NO_COOL_TIME_ENABLED do
+            task.wait(10)
+            if NO_COOL_TIME_ENABLED then
+                pcall(removeCooldowns)
+            end
         end
     end)
     if LocalPlayer.Character then
-        hookCharacterForFastShot()
+        hookCharacterForNoCoolTime()
     end
 end
 ShowTab("Aim")
